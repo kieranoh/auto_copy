@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SO Title Copier</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="wrap">
+    <h1>SO Title Copier</h1>
+    <p class="desc">
+      현재 탭이 ru / ja / es / pt Stack Overflow 질문 페이지이면<br>
+      URL, 원문 제목, 현재 화면 제목을 탭 구분으로 복사합니다.
+    </p>
+
+    <button id="copyBtn">현재 페이지 복사</button>
+
+    <div id="status" class="status">대기 중</div>
+
+    <label for="output" class="label">복사된 내용 미리보기</label>
+    <textarea id="output" readonly placeholder="여기에 결과가 표시됩니다."></textarea>
+
+    <details>
+      <summary>엑셀 붙여넣기 형식</summary>
+      <pre>URL[TAB]원문 제목[TAB]번역된 제목</pre>
+    </details>
+  </main>
+
+  <script src="popup.js"></script>
+</body>
+</html>

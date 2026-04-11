@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "SO Title Copier",
+  "version": "1.0.0",
+  "description": "Copy URL, original title, and translated Korean title from Stack Overflow question pages.",
+  "permissions": ["activeTab", "scripting", "tabs"],
+  "host_permissions": [
+    "https://ru.stackoverflow.com/questions/*",
+    "https://ja.stackoverflow.com/questions/*",
+    "https://es.stackoverflow.com/questions/*",
+    "https://pt.stackoverflow.com/questions/*"
+  ],
+  "action": {
+    "default_title": "SO Title Copier",
+    "default_popup": "popup.html"
+  }
+}
