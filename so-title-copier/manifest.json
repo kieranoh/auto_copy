@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SO Title Copier",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Copy URL, original title, and translated Korean title from Stack Overflow localized sites.",
   "action": {
     "default_popup": "popup.html"
@@ -15,6 +15,7 @@
     "https://ja.stackoverflow.com/*",
     "https://es.stackoverflow.com/*",
     "https://pt.stackoverflow.com/*",
-    "https://api.stackexchange.com/*"
+    "https://api.stackexchange.com/*",
+    "https://translate.googleapis.com/*"
   ]
 }

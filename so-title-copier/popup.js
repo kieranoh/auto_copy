@@ -31,6 +31,18 @@ function decodeHtmlEntities(text) {
   return textarea.value;
 }
 
+function normalizeForCompare(text) {
+  return (text || "")
+    .normalize("NFC")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function isSameMeaningfully(a, b) {
+  return normalizeForCompare(a) === normalizeForCompare(b);
+}
+
 async function getCurrentTab() {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tabs || !tabs.length) {
@@ -52,7 +64,7 @@ async function getPageInfo(tabId) {
         document.querySelector("h1 a") ||
         document.querySelector("h1");
 
-      const translatedTitle = titleEl?.textContent?.trim() || "";
+      const displayedTitle = titleEl?.textContent?.trim() || "";
       const match = path.match(/^\/questions\/(\d+)/);
       const questionId = match ? match[1] : null;
 
@@ -60,7 +72,7 @@ async function getPageInfo(tabId) {
         url,
         host,
         path,
-        translatedTitle,
+        displayedTitle,
         questionId,
       };
     },
@@ -85,7 +97,7 @@ async function getOriginalTitleFromApi(questionId, host) {
   });
 
   if (!response.ok) {
-    throw new Error(`API 요청 실패: ${response.status}`);
+    throw new Error(`원문 제목 API 요청 실패: ${response.status}`);
   }
 
   const data = await response.json();
@@ -96,6 +108,71 @@ async function getOriginalTitleFromApi(questionId, host) {
   }
 
   return decodeHtmlEntities(rawTitle);
+}
+
+async function fallbackTranslateToKorean(text) {
+  const url =
+    "https://translate.googleapis.com/translate_a/single" +
+    `?client=gtx&sl=auto&tl=ko&dt=t&q=${encodeURIComponent(text)}`;
+
+  const response = await fetch(url, {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`재번역 요청 실패: ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  if (!Array.isArray(data) || !Array.isArray(data[0])) {
+    throw new Error("재번역 응답 형식이 올바르지 않습니다.");
+  }
+
+  const translated = data[0]
+    .map(part => Array.isArray(part) ? (part[0] || "") : "")
+    .join("")
+    .trim();
+
+  if (!translated) {
+    throw new Error("재번역 결과가 비어 있습니다.");
+  }
+
+  return translated;
+}
+
+async function resolveKoreanTitle(originalTitle, displayedTitle) {
+  if (!isSameMeaningfully(originalTitle, displayedTitle)) {
+    return {
+      koreanTitle: displayedTitle,
+      source: "page",
+    };
+  }
+
+  setStatus("페이지 제목이 원문과 같아서 재번역 시도 중...");
+
+  try {
+    const retried = await fallbackTranslateToKorean(originalTitle);
+
+    if (!isSameMeaningfully(retried, originalTitle)) {
+      return {
+        koreanTitle: retried,
+        source: "fallback",
+      };
+    }
+
+    return {
+      koreanTitle: displayedTitle,
+      source: "same_after_retry",
+    };
+  } catch (error) {
+    console.warn("재번역 실패:", error);
+    return {
+      koreanTitle: displayedTitle,
+      source: "retry_failed",
+    };
+  }
 }
 
 async function copyCurrentPageInfo() {
@@ -118,19 +195,33 @@ async function copyCurrentPageInfo() {
       throw new Error("질문 ID를 찾지 못했습니다.");
     }
 
-    if (!page.translatedTitle) {
+    if (!page.displayedTitle) {
       throw new Error("현재 화면 제목을 읽지 못했습니다.");
     }
 
     setStatus("원문 제목 가져오는 중...");
-
     const originalTitle = await getOriginalTitleFromApi(page.questionId, page.host);
-    const line = `${page.url}\t${originalTitle}\t${page.translatedTitle}`;
 
+    setStatus("한국어 제목 확인 중...");
+    const { koreanTitle, source } = await resolveKoreanTitle(
+      originalTitle,
+      page.displayedTitle
+    );
+
+    const line = `${page.url}\t${originalTitle}\t${koreanTitle}`;
     await navigator.clipboard.writeText(line);
 
     setOutput(line);
-    setStatus("복사 완료");
+
+    if (source === "fallback") {
+      setStatus("복사 완료 (재번역 사용)");
+    } else if (source === "same_after_retry") {
+      setStatus("복사 완료 (재번역해도 동일)");
+    } else if (source === "retry_failed") {
+      setStatus("복사 완료 (재번역 실패, 현재 제목 사용)");
+    } else {
+      setStatus("복사 완료");
+    }
   } catch (error) {
     console.error(error);
     setStatus(error.message || "복사 실패", true);
@@ -142,6 +233,5 @@ document.addEventListener("DOMContentLoaded", () => {
   if (copyBtn) {
     copyBtn.addEventListener("click", copyCurrentPageInfo);
   }
-
   setStatus("대기 중");
 });
