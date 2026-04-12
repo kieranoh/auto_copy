@@ -1,139 +1,147 @@
-const copyBtn = document.getElementById('copyBtn');
-const statusEl = document.getElementById('status');
-const outputEl = document.getElementById('output');
-
-const SUPPORTED_HOSTS = new Set([
-  'ru.stackoverflow.com',
-  'ja.stackoverflow.com',
-  'es.stackoverflow.com',
-  'pt.stackoverflow.com'
+const supportedHosts = new Set([
+  "ru.stackoverflow.com",
+  "ja.stackoverflow.com",
+  "es.stackoverflow.com",
+  "pt.stackoverflow.com",
 ]);
 
+const apiSiteMap = {
+  "ru.stackoverflow.com": "ru.stackoverflow",
+  "ja.stackoverflow.com": "ja.stackoverflow",
+  "es.stackoverflow.com": "es.stackoverflow",
+  "pt.stackoverflow.com": "pt.stackoverflow",
+};
+
 function setStatus(message, isError = false) {
+  const statusEl = document.getElementById("status");
+  if (!statusEl) return;
   statusEl.textContent = message;
-  statusEl.style.background = isError ? '#fdeaea' : '#f4f4f4';
-  statusEl.style.color = isError ? '#9f1d1d' : '#222222';
+  statusEl.style.color = isError ? "#b00020" : "#222";
 }
 
-function normalizeTitle(text) {
-  return (text || '')
-    .replace(/\s+/g, ' ')
-    .replace(/\s*-\s*Stack Overflow.*$/i, '')
-    .trim();
+function setOutput(text) {
+  const outputEl = document.getElementById("output");
+  if (!outputEl) return;
+  outputEl.value = text;
 }
 
-async function copyToClipboard(text) {
-  await navigator.clipboard.writeText(text);
+function decodeHtmlEntities(text) {
+  const textarea = document.createElement("textarea");
+  textarea.innerHTML = text;
+  return textarea.value;
 }
 
-async function extractQuestionInfo() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-  if (!tab || !tab.id || !tab.url) {
-    throw new Error('현재 탭 정보를 읽지 못했습니다.');
+async function getCurrentTab() {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tabs || !tabs.length) {
+    throw new Error("현재 탭을 찾지 못했습니다.");
   }
+  return tabs[0];
+}
 
-  const url = new URL(tab.url);
+async function getPageInfo(tabId) {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      const url = location.href.split("#")[0];
+      const host = location.hostname;
+      const path = location.pathname;
 
-  if (!SUPPORTED_HOSTS.has(url.hostname) || !url.pathname.startsWith('/questions/')) {
-    throw new Error('지원 대상이 아닙니다. ru / ja / es / pt Stack Overflow 질문 페이지에서 실행해 주세요.');
-  }
+      const titleEl =
+        document.querySelector("h1 a.question-hyperlink") ||
+        document.querySelector("h1 a") ||
+        document.querySelector("h1");
 
-  const injectionResults = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    func: async () => {
-      function normalizeTitleInner(text) {
-        return (text || '')
-          .replace(/\s+/g, ' ')
-          .replace(/\s*-\s*Stack Overflow.*$/i, '')
-          .trim();
-      }
-
-      function getDisplayedTitle() {
-        const candidates = [
-          document.querySelector('h1 a.question-hyperlink'),
-          document.querySelector('h1[itemprop="name"] a'),
-          document.querySelector('h1 a'),
-          document.querySelector('h1')
-        ];
-
-        for (const el of candidates) {
-          const text = normalizeTitleInner(el?.textContent || '');
-          if (text) return text;
-        }
-
-        return normalizeTitleInner(document.title);
-      }
-
-      async function getOriginalTitle(pageUrl) {
-        const response = await fetch(pageUrl, {
-          method: 'GET',
-          credentials: 'omit',
-          cache: 'no-store'
-        });
-
-        if (!response.ok) {
-          throw new Error(`원문 페이지 요청 실패: ${response.status}`);
-        }
-
-        const html = await response.text();
-        const doc = new DOMParser().parseFromString(html, 'text/html');
-
-        const candidates = [
-          doc.querySelector('h1 a.question-hyperlink'),
-          doc.querySelector('h1[itemprop="name"] a'),
-          doc.querySelector('h1 a'),
-          doc.querySelector('h1')
-        ];
-
-        for (const el of candidates) {
-          const text = normalizeTitleInner(el?.textContent || '');
-          if (text) return text;
-        }
-
-        return normalizeTitleInner(doc.title);
-      }
-
-      const cleanUrl = location.href.split('#')[0];
-      const translatedTitle = getDisplayedTitle();
-      const originalTitle = await getOriginalTitle(cleanUrl);
+      const translatedTitle = titleEl?.textContent?.trim() || "";
+      const match = path.match(/^\/questions\/(\d+)/);
+      const questionId = match ? match[1] : null;
 
       return {
-        url: cleanUrl,
-        originalTitle,
-        translatedTitle
+        url,
+        host,
+        path,
+        translatedTitle,
+        questionId,
       };
-    }
+    },
   });
 
-  const result = injectionResults?.[0]?.result;
-
-  if (!result || !result.url) {
-    throw new Error('페이지에서 제목을 추출하지 못했습니다.');
-  }
-
-  return result;
+  return results?.[0]?.result;
 }
 
-async function runCopy() {
-  copyBtn.disabled = true;
-  setStatus('추출 중입니다...');
-  outputEl.value = '';
+async function getOriginalTitleFromApi(questionId, host) {
+  const apiSite = apiSiteMap[host];
+  if (!apiSite) {
+    throw new Error("지원하지 않는 사이트입니다.");
+  }
 
+  const apiUrl =
+    `https://api.stackexchange.com/2.3/questions/${questionId}` +
+    `?site=${encodeURIComponent(apiSite)}`;
+
+  const response = await fetch(apiUrl, {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`API 요청 실패: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const rawTitle = data?.items?.[0]?.title;
+
+  if (!rawTitle) {
+    throw new Error("원문 제목을 찾지 못했습니다.");
+  }
+
+  return decodeHtmlEntities(rawTitle);
+}
+
+async function copyCurrentPageInfo() {
   try {
-    const { url, originalTitle, translatedTitle } = await extractQuestionInfo();
-    const line = `${url}\t${normalizeTitle(originalTitle)}\t${normalizeTitle(translatedTitle)}`;
+    setStatus("확인 중...");
+    setOutput("");
 
-    await copyToClipboard(line);
-    outputEl.value = line;
-    setStatus('복사 완료. 엑셀에 바로 붙여넣으시면 됩니다.');
+    const tab = await getCurrentTab();
+    const page = await getPageInfo(tab.id);
+
+    if (!page?.host || !supportedHosts.has(page.host)) {
+      throw new Error("지원 대상 페이지가 아닙니다.");
+    }
+
+    if (!page.path.startsWith("/questions/")) {
+      throw new Error("질문 페이지에서만 사용할 수 있습니다.");
+    }
+
+    if (!page.questionId) {
+      throw new Error("질문 ID를 찾지 못했습니다.");
+    }
+
+    if (!page.translatedTitle) {
+      throw new Error("현재 화면 제목을 읽지 못했습니다.");
+    }
+
+    setStatus("원문 제목 가져오는 중...");
+
+    const originalTitle = await getOriginalTitleFromApi(page.questionId, page.host);
+    const line = `${page.url}\t${originalTitle}\t${page.translatedTitle}`;
+
+    await navigator.clipboard.writeText(line);
+
+    setOutput(line);
+    setStatus("복사 완료");
   } catch (error) {
     console.error(error);
-    setStatus(error.message || '알 수 없는 오류가 발생했습니다.', true);
-  } finally {
-    copyBtn.disabled = false;
+    setStatus(error.message || "복사 실패", true);
   }
 }
 
-copyBtn.addEventListener('click', runCopy);
-window.addEventListener('DOMContentLoaded', runCopy);
+document.addEventListener("DOMContentLoaded", () => {
+  const copyBtn = document.getElementById("copyBtn");
+  if (copyBtn) {
+    copyBtn.addEventListener("click", copyCurrentPageInfo);
+  }
+
+  setStatus("대기 중");
+});

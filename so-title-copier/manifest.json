@@ -1,17 +1,20 @@
 {
   "manifest_version": 3,
   "name": "SO Title Copier",
-  "version": "1.0.0",
-  "description": "Copy URL, original title, and translated Korean title from Stack Overflow question pages.",
-  "permissions": ["activeTab", "scripting", "tabs"],
-  "host_permissions": [
-    "https://ru.stackoverflow.com/questions/*",
-    "https://ja.stackoverflow.com/questions/*",
-    "https://es.stackoverflow.com/questions/*",
-    "https://pt.stackoverflow.com/questions/*"
-  ],
+  "version": "1.0.1",
+  "description": "Copy URL, original title, and translated Korean title from Stack Overflow localized sites.",
   "action": {
-    "default_title": "SO Title Copier",
     "default_popup": "popup.html"
-  }
+  },
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://ru.stackoverflow.com/*",
+    "https://ja.stackoverflow.com/*",
+    "https://es.stackoverflow.com/*",
+    "https://pt.stackoverflow.com/*",
+    "https://api.stackexchange.com/*"
+  ]
 }
